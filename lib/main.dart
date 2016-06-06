@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 
 //Map _usermap = new Map<String, User>();
 //Map _gameMap = new Map<String, Game>();
+
 ///Template for json file
 Map _defaultData = {
   'service' : "Gamekey",
