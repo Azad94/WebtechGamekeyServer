@@ -1,0 +1,9 @@
+name: Webtech_GamekeyServer
+version: 0.0.1
+description: A simple console application.
+environment:
+  sdk: '>=1.0.0 <2.0.0'
+
+dependencies:
+  start: "^0.2.7"
+  crypto: "1.1.1"
