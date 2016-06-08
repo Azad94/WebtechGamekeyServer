@@ -37,10 +37,12 @@ File _serverStorage = new File('\serverStorage.json');
 
 
 
+//TODO Pretty Print für die _storageFile funktioniert nicht
 
 
 
 main() async {
+
   /**
    * checks if _storageFile the _storageFile contains the _defaultdata,
    * if not write the _defaultData into it
@@ -50,7 +52,7 @@ main() async {
     _serverStorage.openWrite().write(JSON.encode(_defaultData));
   }
 
-  //TODO Pretty Print von der _storageFile funktioniert nicht
+
   /**
       JsonEncoder encoder = new JsonEncoder.withIndent('  ');
       _userMap.forEach((k,v) {
@@ -73,27 +75,29 @@ main() async {
 
 
 
-
   /**
    * Initializes the server on Localhost and on the given Port
    */
   start(host: '0.0.0.0', port: 6060).then((Server _gamekeyServer) {
     _gamekeyServer.static('web');
 
-
-
-
-    Response _serverResponse;
     /**
-     * handles the [GET USERS] request
+     * response which is going to be
+     * send to the client according
+     * to the request he send
+     */
+    Response _serverResponse;
+
+
+    /**
+     * handles the get Users request
      * sends all registered Users as Response
      */
     _gamekeyServer.get('/users').listen((request) {
       _serverResponse = request.response;
       enableCors(_serverResponse);
-      //TODO hier prettyPrint ?
-      print(_gamekeyMemory['users'].toString());
-      _serverResponse.status(HttpStatus.OK).json(_gamekeyMemory["users"]); //json method includes send() which contains IOSink close() --> so no close needed
+      //json method includes send() which contains IOSink close() --> so no close needed
+      _serverResponse.status(HttpStatus.OK).json(_gamekeyMemory["users"]);
     });
 
 
@@ -110,7 +114,6 @@ main() async {
 
 
 
-    //TODO                  wie mache ich die E-Mail Optional     CHECK
     /**
      * Posts as User on the GameKeyServer with
      * Name, Passoword and E-Mail (optional) as parameter
@@ -125,15 +128,15 @@ main() async {
        * Client request
        */
       try{
-      String _newUserName = _clientRequest.param("name");
-      String _newUserPwd = _clientRequest.param("pwd");
-      var _newUserMail = _clientRequest.param("mail");
+      String _userName = _clientRequest.param("name");
+      String _userPwd = _clientRequest.param("pwd");
+      var _userMail = _clientRequest.param("mail");
       var _userID = new Random.secure().nextInt(0xFFFFFFFF);
 
       /**
        * validates the given parameters
        */
-      if (!_checkUserParams(_serverResponse ,_newUserName, _newUserPwd, _newUserMail))
+      if (!_checkUserParams(_serverResponse ,_userName, _userPwd, _userMail))
         return null;
       print("KERNEL");
 
@@ -142,11 +145,11 @@ main() async {
        */
       var user = {
         'type' : "user",
-        'name' : _newUserName,
+        'name' : _userName,
         'id' : _userID.toString(),
         'created' : (new DateTime.now().toString()),
-        'mail' : (_newUserMail != null) ? _newUserMail : '',
-        'signature' : ''
+        'mail' : _userMail,
+        'signature' : _generateSignature(_userID, _userPwd)
       };
 
       /**
@@ -160,7 +163,6 @@ main() async {
         print(stacktrace);
       }
     });
-
 
 
 
@@ -216,9 +218,9 @@ main() async {
             "User not Found.");
         return null;
       }
-      if (isNotAuthentic(user, pwd)) {
-        res.status(HttpStatus.UNAUTHORIZED).send(
-            "unauthorized, please provide correct credentials");
+
+      //TODO HTTPSTATUS UND SO EINFÜGEN
+      if(!_toAuthenticate(user, pwd)){
         return null;
       }
 
@@ -287,19 +289,16 @@ main() async {
       }
       //Reads user which has to be edited
       var user = get_user_by_id(id, _gamekeyMemory);
-      //Control if isNotAuthentic
-      if (isNotAuthentic(user, pwd)) {
-        res.status(HttpStatus.UNAUTHORIZED).send(
-            "unauthorized, please provide correct credentials");
+
+      //TODO HTTPSTATUS UND SO EINFÜGEN
+      if(!_toAuthenticate(user, pwd)){
         return null;
       }
 
       if (!new_name.isEmpty) user['name'] = new_name;
       //Not sure how to handle, edit could mean delete mail with empty string
       if (!new_mail.isEmpty) user['mail'] = new_mail;
-      if (new_pwd != null || !new_pwd.isEmpty) user['signature'] =
-          BASE64.encode((sha256.convert(
-              UTF8.encode(id.toString() + ',' + new_pwd.toString()))).bytes);
+      if (new_pwd != null || !new_pwd.isEmpty) user['signature'] = _generateSignature(id, new_pwd);
       user['update'] = new DateTime.now().toString();
       _serverStorage.openWrite().write(JSON.encode(_gamekeyMemory));
       //Return edited User as Json
@@ -350,12 +349,12 @@ main() async {
             "User not found.");
         return null;
       }
-      //Control if Id/Pwd isNotAuthentic
-      if (isNotAuthentic(user, pwd)) {
-        res.status(HttpStatus.UNAUTHORIZED).send(
-            "unauthorized, please provide correct credentials");
+
+      //TODO HTTPSTATUS UND SO EINFÜGEN
+      if(!_toAuthenticate(user, pwd)){
         return null;
       }
+
       //Removes the user
       if (_gamekeyMemory['users'].remove(user) == null) {
         res.status(HttpStatus.INTERNAL_SERVER_ERROR).send('Failed\n$user');
@@ -464,8 +463,7 @@ main() async {
         "name" : name,
         "id" : id.toString(),
         "url" : uri.toString(),
-        "signature" : BASE64.encode((sha256.convert(
-            UTF8.encode(id.toString() + ',' + secret.toString()))).bytes),
+        "signature" : _generateSignature(id, secret),
         "created" : new DateTime.now().toString()
       };
 
@@ -511,15 +509,13 @@ main() async {
         res.status(HttpStatus.NOT_FOUND).send("Game not found");
         return null;
       }
-      //Control if Signature matches input(has to be changed to isNotAuthentic)
-/**      if (BASE64.encode(
-          (sha256.convert(UTF8.encode(id.toString() + ',' + secret.toString())))
-              .bytes) != game['signature']) {
-        res.status(HttpStatus.UNAUTHORIZED).send(
-            "unauthorized, please provide correct credentials");
+
+      //TODO HTTPSTATUS UND SO EINFÜGEN
+      if(!_toAuthenticate(game, secret)){
         return null;
       }
-**/      //Copys game and adds List of users for game
+
+     //Copys game and adds List of users for game
       game = new Map.from(game);
       game['users'] = new List();
       if (_gamekeyMemory['gamestates'] != null) {
@@ -593,18 +589,17 @@ main() async {
           return null;
         }
       }
-      //Control if is Authentic
- /**     if (isNotAuthentic(game,secret)) {
-        res.status(HttpStatus.UNAUTHORIZED).send(
-            "unauthorized, please provide correct credentials");
+
+      //TODO HTTPSTATUS UND SO EINFÜGEN
+      if(!_toAuthenticate(game, secret)){
         return null;
       }
-  **/    if (!new_name.isEmpty) game['name'] = new_name;
+
+      if (!new_name.isEmpty) game['name'] = new_name;
       //Url cant be deleted
       if (!new_url.isEmpty) game['url'] = new_url;
       //new_secret cant be empty string
-      if (!new_secret.isEmpty) game['signature'] = BASE64.encode((sha256.convert(
-          UTF8.encode(id.toString() + ',' + new_secret.toString()))).bytes);
+      if (!new_secret.isEmpty) game['signature'] = _generateSignature(id, secret);
       game['update'] = new DateTime.now().toString();
       _serverStorage.openWrite().write(JSON.encode(_gamekeyMemory));
       res.status(HttpStatus.OK).json(game);
@@ -654,15 +649,12 @@ main() async {
         res.status(HttpStatus.OK).send("Game not found");
         return null;
       }
-      //Control if isAuthentic(should be changed to function)
-  /**    if (BASE64.encode(
-          (sha256.convert(UTF8.encode(id.toString() + ',' + secret.toString())))
-              .bytes) != game['signature']) {
-        res.status(HttpStatus.UNAUTHORIZED).send(
-            "unauthorized, please provide correct credentials");
+
+      //TODO HTTPSTATUS UND SO EINFÜGEN
+      if(!_toAuthenticate(game, secret)){
         return null;
       }
-  **/
+
       //Removes game
       if (_gamekeyMemory['games'].remove(game) == null) {
         res.status(HttpStatus.OK).send('Failed\n$game');
@@ -726,14 +718,12 @@ main() async {
             "User or game NOT Found.");
         return null;
       }
-/**
-      //Control if is Authentic
-      if (isNotAuthentic(game,secret)) {
-        res.status(HttpStatus.UNAUTHORIZED).send(
-            "unauthorized, please provide correct credentials");
+
+      //TODO HTTPSTATUS UND SO EINFÜGEN
+      if(!_toAuthenticate(game, secret)){
         return null;
       }
-**/
+
       //Lists all states from game and User
       var states = new List<Map>();
       for (Map m in _gamekeyMemory['gamestates']) {
@@ -793,13 +783,11 @@ main() async {
         return null;
       }
 
-/**      //Control if isAuthentic
-      if (isNotAuthentic(game,secret)) {
-        res.status(HttpStatus.UNAUTHORIZED).send(
-            "unauthorized, please provide correct credentials");
+      //TODO HTTPSTATUS UND SO EINFÜGEN
+      if(!_toAuthenticate(game, secret)){
         return null;
       }
-**/
+
       //List all states of game
       var states = new List();
       for (Map m in _gamekeyMemory['gamestates']) {
@@ -855,13 +843,11 @@ main() async {
         return null;
       }
 
-  /**    //Control if isAuthentic
-      if (isNotAuthentic(game,secret)) {
-        res.status(HttpStatus.UNAUTHORIZED).send(
-            "unauthorized, please provide correct credentials");
+      //TODO HTTPSTATUS UND SO EINFÜGEN
+      if(!_toAuthenticate(game, secret)){
         return null;
       }
-**/
+
       //Try/Catch to test if state is crrect Json
       try {
         state = JSON.decode(state);
@@ -894,6 +880,8 @@ main() async {
       }
     });
   });
+
+
 }
 
 
@@ -928,15 +916,18 @@ print("CHECK");
     return false;
   }
 print("PWD CHECKED");
+
   /**
    *  if the given mail hasn't the standard regulations
    *  returns false
    */
-  if (mail != null) {
+  if(mail != null){
     if (!isEmail(mail)) {
-      _serverResponse.status(HttpStatus.BAD_REQUEST).send(
-          "Bad Request: $mail is not a valid email.");
-      return false;
+     _serverResponse.status(HttpStatus.BAD_REQUEST).send(
+         "Bad Request: $mail is not a valid email.");
+     print(isEmail(mail));
+     print(mail.length);
+     return false;
     }
   }
 print("MAIL CHECKED");
@@ -1063,6 +1054,7 @@ bool user_exists(String name, Map memory) {
 bool isEmail(String em) {
   String p = r'^(([^<>()[\]\\.,;:\s@\"]+(\.[^<>()[\]\\.,;:\s@\"]+)*)|(\".+\"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$';
   RegExp regExp = new RegExp(p);
+  if (em == null || em.length == 0) return true;
   return regExp.hasMatch(em);
 }
 
@@ -1108,16 +1100,25 @@ void enableCors(Response response) {
   );
 }
 
+String _generateSignature(String id, String password) {
+  return BASE64
+      .encode(sha256.convert(UTF8.encode(id + "," + password)).bytes);
+}
+
+/**
+ * test
+ */
+bool _toAuthenticate(Map entity, String password) {
+  if (entity != null && password != null)
+    return entity['signature'] == _generateSignature(entity['id'], password);
+  else
+    return false;
+}
 
 /**
 
     SECRET IST AUSGEDACHT, ICH SOLLTE NUR BEI PUT DELETE GET AUF DEN
     SECRET PRÜFEN OB ES DIESEN GIBT UND DER RICHTIG IST ...
-
-
-
-
-
 
 
 **/
