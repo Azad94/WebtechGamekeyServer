@@ -4,7 +4,6 @@ import 'dart:math';
 import 'package:start/start.dart';
 import 'package:crypto/crypto.dart';
 import 'package:Webtech_GamekeyServer/serverLibrary.dart';
-
 /**
  * START --> Sinatra inspired Web-Framework
  * https://www.dartdocs.org/documentation/start/0.2.7/
@@ -15,6 +14,7 @@ Map _usermap = new Map<String, User>();
 Map _gameMap = new Map<String, Game>();
 Defaults _defaultSettings = new Defaults();
 DateTime _createdAt = new DateTime.now();
+
 
 ///Template for json file
 Map _defaultData = {
@@ -41,7 +41,6 @@ File _serverStorage = new File('\serverStorage.json');
 
 
 main() async {
-
   /**
    * checks if _storageFile the _storageFile contains the _defaultdata,
    * if not write the _defaultData into it
@@ -147,9 +146,7 @@ main() async {
         'id' : _userID.toString(),
         'created' : (new DateTime.now().toString()),
         'mail' : (_newUserMail != null) ? _newUserMail : '',
-        'signature' : BASE64.encode(sha256
-            .convert(UTF8.encode(_userID.toString() + ',' + _newUserPwd))
-            .bytes)
+        'signature' : ''
       };
 
       /**
