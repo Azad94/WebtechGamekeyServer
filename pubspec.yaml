@@ -7,3 +7,4 @@ environment:
 dependencies:
   start: "^0.2.7"
   crypto: "1.1.1"
+  uuid: any
