@@ -4,19 +4,11 @@ import 'dart:math';
 import 'package:start/start.dart';
 import 'package:crypto/crypto.dart';
 import 'package:Webtech_GamekeyServer/serverLibrary.dart';
+
 /**
- * START --> Sinatra inspired Web-Framework
- * https://www.dartdocs.org/documentation/start/0.2.7/
+ * Default Data that is written into
+ * the empty file
  */
-
-
-Map _usermap = new Map<String, User>();
-Map _gameMap = new Map<String, Game>();
-Defaults _defaultSettings = new Defaults();
-DateTime _createdAt = new DateTime.now();
-User _user;
-num auth = 0;
-///Template for json file
 Map _defaultData = {
   'service' : "Gamekey",
   'version': "0.0.1",
@@ -25,44 +17,45 @@ Map _defaultData = {
   'gamestates': []
 };
 
+/**
+ * used for savin the data
+ * during the runtime
+ */
+Map _runtimeServerMemory;
 
-Map _gamekeyMemory;
+/**
+ * saves the information of the server
+ * till the next session of usage
+ */
 File _serverStorage = new File('\serverStorage.json');
 
+/**
+ * response which is going to be
+ * send to the client according
+ * to the request received
+ */
+Response _serverResponse;
 
 
-
-
-
-
-
-//TODO Pretty Print für die _storageFile funktioniert nicht
-
-
-
+/**
+ * Contains the Restful Api of the Gamekey Server for
+ * the Webtechnology Project Pac-Man
+ */
 main() async {
 
   /**
-   * checks if _storageFile the _storageFile contains the _defaultdata,
-   * if not write the _defaultData into it
-   * or if the file even exists
+   * write the _defaultData into the _serverStorage
+   * if the _storageFile doesn't exist and the _defaultData
+   * isn't written into it
    */
   if (!await _serverStorage.exists()  || (await _serverStorage.length() < _defaultData.length)) {
     _serverStorage.openWrite().write(JSON.encode(_defaultData));
   }
-
   /**
-      JsonEncoder encoder = new JsonEncoder.withIndent('  ');
-      _userMap.forEach((k,v) {
-      prettyprint = prettyprint + encoder.convert(_userMap[k]._mapOneUserToEncode());
-      });
+   * write the existing data into the _serverMemory
    */
-
-  /**
-   * write the existing information (Map) into the the
-   * current _gamekeyMemory
-   */
-  _gamekeyMemory = JSON.decode(await _serverStorage.readAsString());
+  else
+  _runtimeServerMemory = JSON.decode(await _serverStorage.readAsString());
 
   /**
    * Initializes the server on Localhost and on the given Port
@@ -71,142 +64,203 @@ main() async {
     _gamekeyServer.static('web');
 
     /**
-     * response which is going to be
-     * send to the client according
-     * to the request he send
+     * handles the GET USERS request
+     *
+     * @return 200 OK, response includes all the registered Users
      */
-    Response _serverResponse;
-
-    /**
-     * handles the get Users request
-     * sends all registered Users as Response
-     */
-    _gamekeyServer.get('/users').listen((request) {
-      _serverResponse = request.response;
+    _gamekeyServer.get('/users').listen((_clientRequest) {
+      _serverResponse = _clientRequest.response;
       enableCors(_serverResponse);
-      //json method includes send() which contains IOSink close() --> so no close needed
-      _serverResponse.status(HttpStatus.OK).json(_gamekeyMemory["users"]);
+      _serverResponse.status(HttpStatus.OK).json(_runtimeServerMemory["users"]);
     });
 
+
     /**
-     * Posts as User on the GameKeyServer with
-     * Name, Passoword and E-Mail (optional) as parameter
-     * returns the User if created
+     * handles the POST USER Request
+     *
+     * Posts as User on the GameKeyServer with the required
+     * parameters
+     *
+     * @param name Name of the User.
+     * @param pwd Password of the User, which is used for the authentication.
+     * @mail -- Mail of the User (is optional).
+     *
+     * @return 200 OK, if user the was created successfully
+     * @return 400 BAD_REQUEST, if any of the param is null, empty
+     *                          or not acceptable
+     * @return 409 CONFLICT, if the user already exists
      */
     _gamekeyServer.post('/user').listen((_clientRequest) async {
 
       _serverResponse = _clientRequest.response;
       enableCors(_serverResponse);
 
-      /**
-       * retrieves the parameteres from the
-       * Client request
-       */
       try{
-      String _userName = _clientRequest.param("name");
-      String _userPwd = _clientRequest.param("pwd");
-      var _userMail = _clientRequest.param("mail");
-      var _userID = new Random.secure().nextInt(0xFFFFFFFF);
 
-      if (_clientRequest.input.headers.contentLength != -1) {
-        var map = await _clientRequest.payload();
-        if (_userName.isEmpty) _userName = map["name"];
-        if (_userPwd.isEmpty) _userPwd = map["pwd"];
-        if (_userMail.isEmpty) _userMail = map["mail"];
-      }
+        /**
+         * retrieves the parameters from the
+         * Client request
+         */
+        String _userName = _clientRequest.param("name");
+        String _userPwd = _clientRequest.param("pwd");
+        var _userMail = _clientRequest.param("mail");
+        var _userID = new Random.secure().nextInt(0xFFFFFFFF);
 
-      /**
-       * validates the given parameters
-       */
-      if (!_checkUserParams(_serverResponse ,_userName, _userPwd, _userMail))
-        return null;
+        /**
+         * retrieves the parameters from the
+         * payload of the Client request
+         */
+        if (_clientRequest.input.headers.contentLength != -1) {
+          var map = _clientRequest.payload();
+          if (_userName.isEmpty) _userName = map["name"];
+          if (_userPwd.isEmpty) _userPwd = map["pwd"];
+          if (_userMail.isEmpty) _userMail = map["mail"];
+        }
 
-      /**
-       * creates the user after the params have been validated
-       */
+        if (!_validateUserParams(_serverResponse ,_userName, _userPwd, _userMail))
+          return null;
 
-      var user = {
-        'type' : "user",
-        'name' : _userName,
-        'id' : _userID.toString(),
-        'created' : (new DateTime.now().toIso8601String()),
-        'mail' : _userMail,
-        'signature' : _generateSignature(_userID.toString(), _userPwd)
-      };
+        /**
+         * creates the user after validation which is
+         * supposed to be added
+         */
+        var user = {
+          'type' : "user",
+          'name' : _userName,
+          'id' : _userID.toString(),
+          'created' : (new DateTime.now()..toUtc().toIso8601String()),
+          'mail' : _userMail,
+          'signature' : _generateSignature(_userID.toString(), _userPwd)
+        };
 
-      /**
-       * adds the user and
-       */
-      _gamekeyMemory["users"].add(user);
-      _serverStorage.openWrite().write(JSON.encode(_gamekeyMemory));
-      _serverResponse.status(HttpStatus.OK).json(user);
+        /**
+         * adds the user to the runtime Memory
+         */
+        _runtimeServerMemory["users"].add(user);
+
+        /**
+         * writes the new data into the file
+         */
+        _serverStorage.openWrite().write(JSON.encode(_runtimeServerMemory));
+
+        /**
+         * respond for the Client contains the new User
+         */
+        _serverResponse.status(HttpStatus.OK).json(user);
       }catch(error, stacktrace){
         print(error);
         print(stacktrace);
       }
     });
 
+
     /**
-     * returns User with given ID and Password if existing
+     * handles the GET USER ID Request
+     *
+     * Retireves the User which is searched for.
+     *
+     * @param id Id of the User.
+     * @param pwd Password of the User, which is used for the authentication.
+     *
+     * @return 200 OK, if the User was found
+     * @return 400 BAD_REQUEST, if any of the param is null, empty
+     *                          or not acceptable
+     * @return 401 UNAUTHORIZED, if the credentials are wrong
+     * @return 404 NOT_FOUND, if the User doesn't exist
      */
     _gamekeyServer.get('/user/:id').listen((request) async {
-      Map _searchedUser;
+
       _serverResponse = request.response;
       enableCors(_serverResponse);
 
+      /**
+       * the user that is beeing searched
+       */
+      Map _searchedUser;
+
+      /**
+       * retrieves the parameters from the
+       * Client request
+       */
       var id = request.param("id");
       var pwd = request.param("pwd");
       String _userByname = request.param("byname");
 
+      /**
+       * retrieves the parameters from the
+       * payload of the Client request
+       */
       if (request.input.headers.contentLength != -1) {
         var map = await request.payload();
         pwd = map["pwd"] == null ? "" : map["pwd"];
         _userByname = map["byname"] == null ? "" : map["byname"];
       }
 
-
+      /**
+       * validates if the parameter byname isn't empty and if it has
+       * an acceptable argument
+       *
+       * @return null Status 400 BAD_REQUEST, if byname is not acceptable
+       */
       if (!(_userByname.isEmpty) && (_userByname != 'true') && (_userByname != 'false')) {
         _serverResponse.status(HttpStatus.BAD_REQUEST).send(
             "Bad Request: byname parameter must be 'true' or 'false' (if set), was $_userByname.");
         return null;
       }
+
       if (_userByname == 'true') {
-        _searchedUser = get_user_by_name(_userByname, _gamekeyMemory);
+        _searchedUser = get_user_by_name(id, _runtimeServerMemory);
       }
+
       if (_userByname == 'false' || _userByname.isEmpty) {
-        _searchedUser = get_user_by_id(id, _gamekeyMemory);
-      }
-      if (_searchedUser == null) {
-        _serverResponse.status(HttpStatus.NOT_FOUND).send(
-            "User not Found.");
-        return null;
+        _searchedUser = get_user_by_id(id, _runtimeServerMemory);
       }
 
       if (!_toAuthenticate(_searchedUser, pwd)) {
-        //print("unauthorized");
         _serverResponse.status(HttpStatus.UNAUTHORIZED).send(
             "unauthorized, please provide correct credentials");
         return null;
       }
 
-      ///Cloning user and adding alle played games and gamestates
+      /**
+       * Duplicates the user and adds all its games and gamestates
+       */
       _searchedUser = new Map.from(_searchedUser);
       _searchedUser['games'] = new List();
-      if (_gamekeyMemory['gamestates'] != null) {
-        for (Map m in _gamekeyMemory['gamestates']) {
+      if (_runtimeServerMemory['gamestates'] != null) {
+        for (Map m in _runtimeServerMemory['gamestates']) {
           if (m['userid'].toString() == _searchedUser["id"].toString()) {
             _searchedUser['games'].add(m['gameid']);
           }
         }
       }
+
+      /**
+       * respond for the Client contains the searched User
+       */
       _serverResponse.status(HttpStatus.OK).send(JSON.encode(_searchedUser));
     });
 
     /**
      *
+        #
+        # Updates a user.
+        #
+        # @param :id Unique identifier of the user (the id is never changed!). Required. Parameter is part of the REST-URI!
+        # @param pwd Existing password of the user (used for authentication). Required. Parameter is part of request body.
+        # @param new_name Changes name of the user to provided new name. Optional. Parameter is part of request body.
+        # @param new_mail Changes mail of the user to provided new mail. Optional. Parameter is part of request body.
+        # @param new_pwd Changes password of the user to a new password. Optional. Parameter is part of request body.
+        #
+        # @return 200 OK, on successfull update (response body includes JSON representation of updated user)
+        # @return 400, on invalid mail (response body includes error message)
+        # @return 401, on non matching access credentials (response body includes error message)
+        # @return 409, on already existing new name (response body includes error message)
+
+     *
      */
     _gamekeyServer.put('/user/:id').listen((request) async {
-    _serverResponse = request.response;
+      _serverResponse = request.response;
       enableCors(_serverResponse);
 
       String id = request.param("id");
@@ -229,16 +283,15 @@ main() async {
         return null;
       }
 
-      if (user_exists(new_name, _gamekeyMemory)) {
+      if (user_exists(new_name, _runtimeServerMemory)) {
         _serverResponse.status(HttpStatus.NOT_ACCEPTABLE).send(
             "User with name $new_name exists already.");
         return null;
       }
       //Reads user which has to be edited
-      var user = get_user_by_id(id, _gamekeyMemory);
+      var user = get_user_by_id(id, _runtimeServerMemory);
 
       if (!_toAuthenticate(user, pwd)) {
-        auth++;
         //print("unauthorized");
         _serverResponse.status(HttpStatus.UNAUTHORIZED).send(
             "unauthorized, please provide correct credentials");
@@ -252,7 +305,7 @@ main() async {
           UTF8.encode(id.toString() + ',' + new_pwd.toString()))).bytes);
       user['update'] = new DateTime.now().toString();
 
-      _serverStorage.openWrite().write(JSON.encode(_gamekeyMemory));
+      _serverStorage.openWrite().write(JSON.encode(_runtimeServerMemory));
       //Return edited User as Json
       _serverResponse.status(HttpStatus.OK).json(user);
     });
@@ -272,7 +325,7 @@ main() async {
         pwd = map["pwd"] == null ? "" : map["pwd"];
       }
       //Gets user which should be deleted
-      var user = get_user_by_id(id, _gamekeyMemory);
+      var user = get_user_by_id(id, _runtimeServerMemory);
       //if user does not exist send Ok(could be more than one Request,
       //so the server knows the User which should be deleted is gone)
       if (user == null) {
@@ -281,7 +334,7 @@ main() async {
         return null;
       }
 
-     // print(!_toAuthenticate(user,pwd));
+      // print(!_toAuthenticate(user,pwd));
       if (!_toAuthenticate(user, pwd)) {
         _serverResponse.status(HttpStatus.UNAUTHORIZED).send(
             "unauthorized, please provide correct credentials");
@@ -289,16 +342,16 @@ main() async {
       }
 
       //Removes the user
-      if (_gamekeyMemory['users'].remove(user) == null) {
+      if (_runtimeServerMemory['users'].remove(user) == null) {
         _serverResponse.status(HttpStatus.INTERNAL_SERVER_ERROR).send('Failed\n$user');
       }
       //Removes all gamestates from specific User
       List<Map> gs = new List<Map>();
-      _gamekeyMemory['gamestates']
+      _runtimeServerMemory['gamestates']
           .where((g) => g["userid"].toString() == id.toString())
           .forEach((g) => gs.add(g));
-      gs.forEach((g) => _gamekeyMemory["gamestates"].remove(g));
-      _serverStorage.openWrite().write(JSON.encode(_gamekeyMemory));
+      gs.forEach((g) => _runtimeServerMemory["gamestates"].remove(g));
+      _serverStorage.openWrite().write(JSON.encode(_runtimeServerMemory));
       _serverResponse.status(HttpStatus.OK).send("Success");
     });
 
@@ -323,7 +376,7 @@ main() async {
     _gamekeyServer.get('/games').listen((request) {
       _serverResponse = request.response;
       enableCors(_serverResponse);
-      _serverResponse.status(HttpStatus.OK).json(_gamekeyMemory['games']);
+      _serverResponse.status(HttpStatus.OK).json(_runtimeServerMemory['games']);
     });
 
 
@@ -378,10 +431,10 @@ main() async {
         "created" : new DateTime.now().toUtc().toIso8601String()
       };
 
-      _gamekeyMemory['games'].add(game);
+      _runtimeServerMemory['games'].add(game);
       _serverResponse.status(HttpStatus.OK).json(game);
       _serverResponse.close();
-      await _serverStorage.openWrite().write(JSON.encode(_gamekeyMemory));
+      await _serverStorage.openWrite().write(JSON.encode(_runtimeServerMemory));
     });
 
     /**
@@ -399,7 +452,7 @@ main() async {
         if (secret.isEmpty) secret = map["secret"] == null ? "" : map["secret"];
       }
       //Gets game by id
-      var game = get_game_by_id(id, _gamekeyMemory);
+      var game = get_game_by_id(id, _runtimeServerMemory);
 
       if (game == null) {
         res.status(HttpStatus.NOT_FOUND).send("Game not found");
@@ -413,11 +466,11 @@ main() async {
         return null;
       }
 
-     //Copys game and adds List of users for game
+      //Copys game and adds List of users for game
       game = new Map.from(game);
       game['users'] = new List();
-      if (_gamekeyMemory['gamestates'] != null) {
-        for (Map m in _gamekeyMemory['gamestates']) {
+      if (_runtimeServerMemory['gamestates'] != null) {
+        for (Map m in _runtimeServerMemory['gamestates']) {
           if (m['gameid'].toString() == id.toString()) {
             game['users'].add(m['userid']);
           }
@@ -448,7 +501,7 @@ main() async {
       }
 
       //Gets game by id
-      var game = get_game_by_id(id, _gamekeyMemory);
+      var game = get_game_by_id(id, _runtimeServerMemory);
 
       //Control if url is valid
       Uri uri = Uri.parse(new_url);
@@ -459,7 +512,7 @@ main() async {
       }
       //Control if game exists
       if (!new_name.isEmpty) {
-        if (game_exists(new_name, _gamekeyMemory)) {
+        if (game_exists(new_name, _runtimeServerMemory)) {
           _serverResponse.status(HttpStatus.BAD_REQUEST).send(
               "Game Already exists");
           return null;
@@ -481,7 +534,7 @@ main() async {
       if (!new_secret.isEmpty) game['signature'] = _generateSignature(id.toString(), new_secret);
       game['update'] = new DateTime.now().toString();
 
-      _serverStorage.openWrite().write(JSON.encode(_gamekeyMemory));
+      _serverStorage.openWrite().write(JSON.encode(_runtimeServerMemory));
       _serverResponse.status(HttpStatus.OK).json(game);
     });
 
@@ -501,7 +554,7 @@ main() async {
       }
 
       //Gets game by id
-      var game = get_game_by_id(id, _gamekeyMemory);
+      var game = get_game_by_id(id, _runtimeServerMemory);
       //Control if game exists
       if (game == null) {
         _serverResponse.status(HttpStatus.OK).send("Game not found");
@@ -516,18 +569,18 @@ main() async {
       }
 
       //Removes game
-      if (_gamekeyMemory['games'].remove(game) == null) {
+      if (_runtimeServerMemory['games'].remove(game) == null) {
         _serverResponse.status(HttpStatus.OK).send('Failed\n$game');
       }
 
       //Removes all gamestates of said game
       List<Map> gs = new List<Map>();
-      _gamekeyMemory['gamestates']
+      _runtimeServerMemory['gamestates']
           .where((g) => g["gameid"].toString() == id.toString())
           .forEach((g) => gs.add(g));
-      gs.forEach((g) => _gamekeyMemory["gamestates"].remove(g));
+      gs.forEach((g) => _runtimeServerMemory["gamestates"].remove(g));
 
-      _serverStorage.openWrite().write(JSON.encode(_gamekeyMemory));
+      _serverStorage.openWrite().write(JSON.encode(_runtimeServerMemory));
       _serverResponse.status(HttpStatus.OK).send('Success');
     });
 
@@ -565,8 +618,8 @@ main() async {
       }
 
       //Gets games and user
-      var game = get_game_by_id(gameid, _gamekeyMemory);
-      var user = get_user_by_id(userid, _gamekeyMemory);
+      var game = get_game_by_id(gameid, _runtimeServerMemory);
+      var user = get_user_by_id(userid, _runtimeServerMemory);
 
 
       //Control if either games or user does not exist
@@ -585,7 +638,7 @@ main() async {
 
       //Lists all states from game and User
       var states = new List<Map>();
-      for (Map m in _gamekeyMemory['gamestates']) {
+      for (Map m in _runtimeServerMemory['gamestates']) {
         if (m['gameid'].toString() == gameid.toString() &&
             m['userid'].toString() == userid.toString()) {
           var state = new Map.from(m);
@@ -638,7 +691,7 @@ main() async {
       }
 
       //Gets game by id and Control if exists
-      var game = get_game_by_id(gameid, _gamekeyMemory);
+      var game = get_game_by_id(gameid, _runtimeServerMemory);
       if (game == null) {
         res.status(HttpStatus.NOT_FOUND).send(
             "Game NOT Found.");
@@ -654,11 +707,11 @@ main() async {
 
       //List all states of game
       var states = new List();
-      for (Map m in _gamekeyMemory['gamestates']) {
+      for (Map m in _runtimeServerMemory['gamestates']) {
         if (m['gameid'].toString() == gameid.toString()) {
           var state = new Map.from(m);
           state["gamename"] = game["name"];
-          state["username"] = get_user_by_id(m["userid"],_gamekeyMemory)["name"];
+          state["username"] = get_user_by_id(m["userid"],_runtimeServerMemory)["name"];
           states.add(state);
         }
       }
@@ -693,8 +746,8 @@ main() async {
       }
 
       //Gets user and game
-      var game = get_game_by_id(gameid, _gamekeyMemory);
-      var user = get_user_by_id(userid, _gamekeyMemory);
+      var game = get_game_by_id(gameid, _runtimeServerMemory);
+      var user = get_user_by_id(userid, _runtimeServerMemory);
 
       //Control if either user or games has not been found
       if (user == null || game == null) {
@@ -731,8 +784,8 @@ main() async {
           "state" : state
         };
 
-        _gamekeyMemory["gamestates"].add(gamestate);
-        _serverStorage.openWrite().write(JSON.encode(_gamekeyMemory));
+        _runtimeServerMemory["gamestates"].add(gamestate);
+        _serverStorage.openWrite().write(JSON.encode(_runtimeServerMemory));
         res.status(HttpStatus.OK).json(gamestate);
 
       } on NoSuchMethodError catch (e) {
@@ -742,24 +795,23 @@ main() async {
       }
     });
   });
-
-
 }
 
 
 
-
-
-
-
-
-
-
-
-bool _checkUserParams(Response _serverResponse, String name, String pwd, String mail){
 /**
+ * checks if the parameters given are valid
+ *
+ * @return false and send 400 BAR_REQUEST if any of the params
+ *         is null or empty
+ * @return false and send 409 CONFLICT, if the user already exists
+ * @return true if all the params are valid
+ */
+bool _validateUserParams(Response _serverResponse, String name, String pwd, String mail){
+
+  /**
    * if the user name is null or empty
-   * return false
+   * @return false and Status 400 Bad Request
    */
   if (name == null || name.isEmpty) {
     _serverResponse.status(HttpStatus.BAD_REQUEST).send(
@@ -768,7 +820,7 @@ bool _checkUserParams(Response _serverResponse, String name, String pwd, String 
   }
   /**
    * if pwd is null or empty
-   * return false
+   * @return false and Status 400 BAD_REQUEST
    */
   if (pwd == null || pwd.isEmpty) {
     _serverResponse.status(HttpStatus.BAD_REQUEST).send(
@@ -778,26 +830,35 @@ bool _checkUserParams(Response _serverResponse, String name, String pwd, String 
 
   /**
    *  if the given mail hasn't the standard regulations
-   *  returns false
+   *  @returns false and Status 400 BAD_REQUEST
    */
   if(mail != null){
     if (!isEmail(mail)) {
       _serverResponse.status(HttpStatus.BAD_REQUEST).send(
-         "Bad Request: $mail is not a valid email.");
-     return false;
+          "Bad Request: $mail is not a valid email.");
+      return false;
     }
   }
+
   /**
    * if the user already exists
-   * return false
+   * @return false and Status 409 CONFLICT
    */
-  if (user_exists(name, _gamekeyMemory)) {
+  if (user_exists(name, _runtimeServerMemory)) {
     _serverResponse.status(HttpStatus.CONFLICT).send(
         "Bad Reqeust: The name $name is already taken");
     return false;
   }
   return true;
 }
+
+
+
+
+
+
+
+
 
 bool _checkGameParams(Response _serverResponse, String name, String pwd, String url){
 
@@ -836,7 +897,7 @@ bool _checkGameParams(Response _serverResponse, String name, String pwd, String 
    * if the user already exists
    * return false
    */
-  if (game_exists(name, _gamekeyMemory)) {
+  if (game_exists(name, _runtimeServerMemory)) {
     _serverResponse.status(HttpStatus.CONFLICT).send(
         "Bad Reqeust: The name $name is already taken");
     return false;
@@ -859,32 +920,6 @@ bool _checkGameParams(Response _serverResponse, String name, String pwd, String 
 /**
  *
  */
-void t(){
-  var user = {
-    'type' : "user",
-    'name' : "Name",
-    'id' : "ID",
-    'created' : (new DateTime.now().toString()),
-    'mail' : "mail",
-    'signature' : "signature"
-  };
-  _gamekeyMemory["users"].add(user);
-
-  var users = {
-    'type' : "user",
-    'name' : "Malte",
-    'id' : "Game",
-    'created' : (new DateTime.now().toString()),
-    'mail' : "Grebe@m.com",
-    'signature' : "GREBEN"
-  };
-  _gamekeyMemory["users"].add(users);
-  _serverStorage.openWrite().write(JSON.encode(_gamekeyMemory));
-}
-
-/**
- *
- */
 Map get_game_by_id(String id, Map memory) {
   for (Map m in memory['games']) {
     if (m['id'].toString() == id.toString()) return m;
@@ -903,21 +938,31 @@ bool game_exists(String name, Map memory) {
 }
 
 /**
- *
+ * gets the User hash by name from the Memory
+ * @return m, if user is found
+ * @return Status 404 NOT_FOUND, if the user wasn't found
  */
 Map get_user_by_name(String name, Map memory) {
   for (Map m in memory['users']) {
     if (m['name'] == name) return m;
   }
+  _serverResponse.status(HttpStatus.NOT_FOUND).send(
+      "User not Found.");
+  return null;
 }
 
 /**
- *
+ * gets the User hash by name from the Memory
+ * @return m, if user is found
+ * @return Status 404 NOT_FOUND, if the user wasn't found
  */
 Map get_user_by_id(String id, Map memory) {
   for (Map m in memory['users']) {
     if (m['id'].toString() == id.toString()) return m;
   }
+  _serverResponse.status(HttpStatus.NOT_FOUND).send(
+      "User not Found.");
+  return null;
 }
 
 /**
@@ -962,7 +1007,7 @@ bool _authenticUser(Map map, String pwd) {
 bool _auth(Map map, var id, String signature){
   if(map["signature"] != BASE64.encode(
       (sha256.convert(UTF8.encode(id.toString() + ',' + signature.toString())))
-        .bytes)) return true;
+          .bytes)) return true;
   return false;
 }
 
@@ -983,16 +1028,26 @@ void enableCors(Response response) {
   );
 }
 
-String _generateSignature(String id, String password) {
+/**
+ * Generates the Signature of a User or a Game with the parameters
+ * @param id, of the User or the Game
+ * @param passwordOrSecret, of the User or the Game
+ *
+ * @return signature
+ */
+String _generateSignature(String id, String passwordOrSecret) {
   return BASE64
-      .encode(sha256.convert(UTF8.encode(id + "," + password)).bytes);
+      .encode(sha256.convert(UTF8.encode(id + "," + passwordOrSecret)).bytes);
 }
 
 /**
- * test
+ * Authenticates a User or a Game with its ID and Password/Secret
+ *
+ * @return true, if the given credentials match with the ones saved
+ * @return false, if the given credentials doesn't match with the ones saved
  */
 bool _toAuthenticate(Map entity, String password) {
-    if(entity['signature'] == _generateSignature(entity['id'].toString(), password))
+  if(entity['signature'] == _generateSignature(entity['id'].toString(), password))
     return true;
-    return false;
+  return false;
 }
