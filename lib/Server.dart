@@ -921,7 +921,6 @@ main() async {
       var game = get_game_by_id(_currentGameId, _runtimeMemory);
 
       //Check if the given URL is valid
-      Uri uri = Uri.parse(_newGameUrl);
       if (!_newGameUrl.isEmpty && (!isUrl(_newGameUrl))) {
         _serverResponse.status(HttpStatus.BAD_REQUEST).send(
             "Bad Request: '" + _newGameUrl + "' is not a valid absolute url");
