@@ -5,285 +5,6 @@ import 'package:start/start.dart';
 import 'package:crypto/crypto.dart';
 
 /**
- * Default Data that is written into
- * the empty file
- */
-Map _defaultData = {
-  'service' : "Gamekey",
-  'version': "0.0.1",
-  'users': [],
-  'games': [],
-  'gamestates': []
-};
-
-/**
- * used for saving the data
- * during the runtime
- */
-Map _runtimeMemory;
-
-/**
- * saves the information of the server
- * till the next session of usage
- */
-File _serverCache = new File('\serverCache.json');
-
-/**
- * response which is going to be
- * send to the client according
- * to the request received
- */
-Response _serverResponse;
-
-/**
- * Get User by Name from Memory
- *
- * @return null, if User doesn't exist
- */
-Map get_user_by_name(String name, Map memory) {
-
-  for (Map m in memory['users']) {
-    if (m['name'] == name) return m;
-  }
-  return null;
-}
-
-/**
- * Get User by Id from Memory
- *
- * @return null, if User doesn't exist
- */
-Map get_user_by_id(String id, Map memory) {
-
-  for (Map m in memory['users']) {
-    if (m['id'].toString() == id.toString()) return m;
-  }
-  return null;
-}
-
-/**
- * Check if User exists in the Memory
- *
- * @return false, if User doesn't exist
- */
-bool user_exists(String name, Map memory) {
-
-  for (Map m in memory['users']) {
-    if (m['name'] == name) return true;
-  }
-  return false;
-}
-
-/**
- * Validate if the E-Mail is correct
- *
- * @return true, if mail is null or doesn't contain any characters
- */
-bool isEmail(String mail) {
-
-  String _mailRegex =
-      r'^(([^<>()[\]\\.,;:\s@\"]+(\.[^<>()[\]\\.,;:\s@\"]+)*)|(\".+\"))@((\['
-      r'[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+'
-      r'\.)+[a-zA-Z]{2,}))$';
-
-  RegExp _regexExpr = new RegExp(_mailRegex);
-  if (mail == null || mail.length == 0) return true;
-  return _regexExpr.hasMatch(mail);
-}
-
-
-/**
- * Get Game by Id from Memory
- *
- * @return null, if Game doesn't exist
- */
-Map get_game_by_id(String id, Map memory) {
-  for (Map m in memory['games']) {
-    if (m['id'].toString() == id.toString()) return m;
-  }
-  return null;
-}
-
-/**
- * Check if Game exists in the Memory
- *
- * @return false, if Game doesn't exist
- */
-bool game_exists(String name, Map memory) {
-  for (Map m in memory['games']) {
-    if (m['name'] == name) return true;
-  }
-  return false;
-}
-
-/**
- * Validate if the Url is correct
- *
- * @return Expression, if the Url is correct
- */
-bool isUrl(String url) {
-  String exp = r'(https?:\/\/)';
-  RegExp regExp = new RegExp(exp);
-  return regExp.hasMatch(url);
-}
-
-
-/**
- * Sets CORS headers for responses.
- */
-void enableCors(Response response) {
-  response.header('Access-Control-Allow-Origin',
-      '*'
-  );
-  response.header('Access-Control-Allow-Methods',
-      'POST, GET, DELETE, PUT, OPTIONS'
-  );
-  response.header('Access-Control-Allow-Headers',
-      'Origin, X-Requested-With, Content-Type, Accept, Charset,'
-          'charset, pwd, secret, name, mail, newpwd'
-  );
-}
-
-/**
- * Generates the Signature for a User/Game
- * with the User_Id/Game_Id and the User_Pwd/Game_Secret
- *
- * @return signature
- */
-String _generateSignature(String id, String password) {
-  return BASE64
-      .encode(sha256.convert(UTF8.encode(id + "," + password)).bytes);
-}
-
-/**
- * Authenticates a User/Game with it's credentials and
- * the related signature
- *
- * @return true, if generated credentials match the signature
- */
-bool _toAuthenticate(Map entity, String password) {
-  if(entity['signature'] ==
-      _generateSignature(entity['id'].toString(), password))
-    return true;
-  return false;
-}
-
-/**
- * checks if the User parameters given are valid
- *
- * @return false & send 400 BAD_REQUEST,  if any of the params is null or empty
- * @return false & send 409 CONFLICT,     if the user already exists
- * @return true                           if all the params are valid
- */
-bool _validateUserParams(Response _serverResponse, String _userName,
-    String _userPwd, String _userMail){
-
-  /**
-   * validate User name
-   *
-   * @return false & 400 Bad Request  if _username is null or empty
-   */
-  if (_userName == null || _userName.isEmpty) {
-    _serverResponse.status(HttpStatus.BAD_REQUEST).send(
-        "Bad Request: Name is required");
-    return false;
-  }
-
-  /**
-   * validate User password
-   *
-   * @return false & 400 BAD_REQUEST    if _userPwd is null or empty
-   */
-  if (_userPwd == null || _userPwd.isEmpty) {
-    _serverResponse.status(HttpStatus.BAD_REQUEST).send(
-        "Bad Request: Password is required");
-    return false;
-  }
-
-  /**
-   *  validate User e-mail
-   *
-   *  @returns false & 400 BAD_REQUEST   if _usermail is not valid
-   */
-  if(_userMail != null){
-    if (!isEmail(_userMail)) {
-      _serverResponse.status(HttpStatus.BAD_REQUEST).send(
-          "Bad Request: $_userMail is not a valid email.");
-      return false;
-    }
-  }
-
-  /**
-   * check if the User already exists
-   *
-   * @return false & 409 CONFLICT   if User already exists
-   */
-  if (user_exists(_userName, _runtimeMemory)) {
-    _serverResponse.status(HttpStatus.CONFLICT).send(
-        "Bad Reqeust: The name $_userName is already taken");
-    return false;
-  }
-  return true;
-}
-
-
-/**
- * checks if the Game parameters given are valid
- *
- * @return false & send 400 BAD_REQUEST,  if any of the params is null or empty
- * @return false & send 409 CONFLICT,     if the Game already exists
- * @return true                           if all the params are valid
- */
-bool _validateGameParams(Response _serverResponse, String _gameName,
-    String _gamePwd, String _gameUrl){
-
-  /**
-   * validate Game name
-   *
-   * @return false & 409 CONFLICT   if _gameName is null or empty
-   */
-  if (_gameName == null || _gameName.isEmpty) {
-    _serverResponse.status(HttpStatus.BAD_REQUEST).send(
-        "Bad Request: Name is required");
-    return false;
-  }
-
-  /**
-   * validate Game password
-   *
-   * @return false & 400 BAD_REQUEST    if _gamePwd is null or empty
-   */
-  if (_gamePwd == null || _gamePwd.isEmpty) {
-    _serverResponse.status(HttpStatus.BAD_REQUEST).send(
-        "Bad Request: Password is required");
-    return false;
-  }
-
-  /**
-   * validate Game url
-   *
-   * @returns false & 400 BAD_REQUEST    if _gameUrl is not valid
-   */
-  if (!_gameUrl.isEmpty && !isUrl(_gameUrl)) {
-    _serverResponse.status(HttpStatus.BAD_REQUEST).send(
-        "Bad Request: '" + _gameUrl + "' is not a valid absolute url");
-    return null;
-  }
-
-  /**
-   * check if the Game already exists
-   *
-   * @return false & 409 CONFLICT   if Game already exists
-   */
-  if (game_exists(_gameName, _runtimeMemory)) {
-    _serverResponse.status(HttpStatus.CONFLICT).send(
-        "Bad Reqeust: The name $_gameName is already taken");
-    return false;
-  }
-  return true;
-}
-
-/**
  * Contains the Restful Api of the Gamekey Server for
  * the Webtechnology Project Pac-Man
  */
@@ -312,6 +33,60 @@ main() async {
     /**
      *
      *
+     *                The Options API for all Possible Methods begins HERE.
+     *
+     *
+     */
+
+    /**
+     * handles the OPTIONS USERS request
+     *
+     * Sends the Information to the Client, which Methods
+     * the server handles on Users.
+     *
+     * @return  response includes Methods allowed for Users
+     */
+    _gamekeyServer.options('/users').listen((request) {
+      _serverResponse = request.response;
+      enableCors(_serverResponse);
+      _serverResponse.send("POST, GET, GET/:Id, PUT/:Id, DELETE/:Id");
+    });
+
+    /**
+     * handles the OPTIONS GAMES Request
+     *
+     * Sends the Information to the Client, which Methods
+     * the server handles on Games.
+     *
+     * @return  response includes Methods allowed for Games
+     */
+    _gamekeyServer.options('/games').listen((request) {
+      _serverResponse = request.response;
+      enableCors(_serverResponse);
+      _serverResponse.send("POST, GET, GET/:Id, PUT/:Id, DELETE/:Id");
+    });
+
+    /**
+     * handles the OPTIONS GAMESTATES Request
+     *
+     * Sends the Information to the Client, which Methods
+     * the server handles on Gamestates.
+     *
+     * @return  response includes Methodes allowed for Gamestates
+     */
+    _gamekeyServer.options('/gamestates').listen((request) {
+      _serverResponse = request.response;
+      enableCors(_serverResponse);
+      _serverResponse.send("POST/:Gameid/:Userid, GET/:Gameid, GET/:Gameid/:Userid");
+    });
+
+
+
+
+
+    /**
+     *
+     *
      *                The API for the User begins HERE.
      *
      *
@@ -320,7 +95,9 @@ main() async {
     /**
      * handles the GET USERS request
      *
-     * @return 200 OK,  response includes all the registered Users
+     * Retrieves all registered User on the GamekeyServer.
+     *
+     * @return 200 OK,          response includes all the registered Users
      */
     _gamekeyServer.get('/users').listen((request) {
       _serverResponse = request.response;
@@ -1293,4 +1070,294 @@ main() async {
       }
     });
   });
+}
+
+    /**
+    *
+    *
+    *                Helper Methods, for the Restful Api Implementation.
+    *
+    *
+    */
+
+/**
+ * Default Data that is written into
+ * the empty file
+ */
+Map _defaultData = {
+  'service' : "Gamekey",
+  'version': "0.0.1",
+  'users': [],
+  'games': [],
+  'gamestates': []
+};
+
+/**
+ * used for saving the data
+ * during the runtime
+ */
+Map _runtimeMemory;
+
+/**
+ * saves the information of the server
+ * till the next session of usage
+ */
+File _serverCache = new File('\serverCache.json');
+
+/**
+ * response which is going to be
+ * send to the client according
+ * to the request received
+ */
+Response _serverResponse;
+
+/**
+ * Get User by Name from Memory
+ *
+ * @return null, if User doesn't exist
+ */
+Map get_user_by_name(String name, Map memory) {
+
+  for (Map _map in memory['users']) {
+    if (_map['name'] == name) return _map;
+  }
+  return null;
+}
+
+/**
+ * Get User by Id from Memory
+ *
+ * @return null, if User doesn't exist
+ */
+Map get_user_by_id(String id, Map memory) {
+
+  for (Map _map in memory['users']) {
+    if (_map['id'].toString() == id.toString())
+      return _map;
+  }
+  return null;
+}
+
+/**
+ * Check if User exists in the Memory
+ *
+ * @return false, if User doesn't exist
+ */
+bool user_exists(String name, Map memory) {
+
+  for (Map _map in memory['users']) {
+    if (_map['name'] == name) return true;
+  }
+  return false;
+}
+
+/**
+ * Validate if the E-Mail is correct
+ *
+ * @return true, if mail is null or doesn't contain any characters
+ */
+bool isEmail(String mail) {
+
+  String _mailRegex =
+      r'^(([^<>()[\]\\.,;:\s@\"]+(\.[^<>()[\]\\.,;:\s@\"]+)*)|(\".+\"))@((\['
+      r'[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+'
+      r'\.)+[a-zA-Z]{2,}))$';
+
+  RegExp _regexExpr = new RegExp(_mailRegex);
+  if (mail == null || mail.length == 0)
+    return true;
+  return _regexExpr.hasMatch(mail);
+}
+
+
+/**
+ * Get Game by Id from Memory
+ *
+ * @return null, if Game doesn't exist
+ */
+Map get_game_by_id(String id, Map memory) {
+  for (Map _map in memory['games']) {
+    if (_map['id'].toString() == id.toString())
+      return _map;
+  }
+  return null;
+}
+
+/**
+ * Check if Game exists in the Memory
+ *
+ * @return false, if Game doesn't exist
+ */
+bool game_exists(String name, Map memory) {
+  for (Map _map in memory['games']) {
+    if (_map['name'] == name) return true;
+  }
+  return false;
+}
+
+/**
+ * Validate if the Url is correct
+ *
+ * @return Expression, if the Url is correct
+ */
+bool isUrl(String url) {
+  String exp = r'(https?:\/\/)';
+  RegExp _regexExp = new RegExp(exp);
+  return _regexExp.hasMatch(url);
+}
+
+
+/**
+ * Sets CORS headers for responses.
+ */
+void enableCors(Response response) {
+  response.header('Access-Control-Allow-Origin',
+      '*'
+  );
+  response.header('Access-Control-Allow-Methods',
+      'POST, GET, DELETE, PUT, OPTIONS'
+  );
+  response.header('Access-Control-Allow-Headers',
+      'Origin, X-Requested-With, Content-Type, Accept, Charset,'
+          'charset, pwd, secret, name, mail, newpwd'
+  );
+}
+
+/**
+ * Generates the Signature for a User/Game
+ * with the User_Id/Game_Id and the User_Pwd/Game_Secret
+ *
+ * @return signature
+ */
+String _generateSignature(String id, String password) {
+  return BASE64
+      .encode(sha256.convert(UTF8.encode(id + "," + password)).bytes);
+}
+
+/**
+ * Authenticates a User/Game with it's credentials and
+ * the related signature
+ *
+ * @return true, if generated credentials match the signature
+ */
+bool _toAuthenticate(Map entity, String password) {
+  if(entity['signature'] ==
+      _generateSignature(entity['id'].toString(), password))
+    return true;
+  return false;
+}
+
+/**
+ * checks if the User parameters given are valid
+ *
+ * @return false & send 400 BAD_REQUEST,  if any of the params is null or empty
+ * @return false & send 409 CONFLICT,     if the user already exists
+ * @return true                           if all the params are valid
+ */
+bool _validateUserParams(Response _serverResponse, String _userName,
+    String _userPwd, String _userMail){
+
+  /**
+   * validate User name
+   *
+   * @return false & 400 Bad Request  if _username is null or empty
+   */
+  if (_userName == null || _userName.isEmpty) {
+    _serverResponse.status(HttpStatus.BAD_REQUEST).send(
+        "Bad Request: Name is required");
+    return false;
+  }
+
+  /**
+   * validate User password
+   *
+   * @return false & 400 BAD_REQUEST    if _userPwd is null or empty
+   */
+  if (_userPwd == null || _userPwd.isEmpty) {
+    _serverResponse.status(HttpStatus.BAD_REQUEST).send(
+        "Bad Request: Password is required");
+    return false;
+  }
+
+  /**
+   *  validate User e-mail
+   *
+   *  @returns false & 400 BAD_REQUEST   if _usermail is not valid
+   */
+  if(_userMail != null){
+    if (!isEmail(_userMail)) {
+      _serverResponse.status(HttpStatus.BAD_REQUEST).send(
+          "Bad Request: $_userMail is not a valid email.");
+      return false;
+    }
+  }
+
+  /**
+   * check if the User already exists
+   *
+   * @return false & 409 CONFLICT   if User already exists
+   */
+  if (user_exists(_userName, _runtimeMemory)) {
+    _serverResponse.status(HttpStatus.CONFLICT).send(
+        "Bad Reqeust: The name $_userName is already taken");
+    return false;
+  }
+  return true;
+}
+
+
+/**
+ * checks if the Game parameters given are valid
+ *
+ * @return false & send 400 BAD_REQUEST,  if any of the params is null or empty
+ * @return false & send 409 CONFLICT,     if the Game already exists
+ * @return true                           if all the params are valid
+ */
+bool _validateGameParams(Response _serverResponse, String _gameName,
+    String _gamePwd, String _gameUrl){
+
+  /**
+   * validate Game name
+   *
+   * @return false & 409 CONFLICT   if _gameName is null or empty
+   */
+  if (_gameName == null || _gameName.isEmpty) {
+    _serverResponse.status(HttpStatus.BAD_REQUEST).send(
+        "Bad Request: Name is required");
+    return false;
+  }
+
+  /**
+   * validate Game password
+   *
+   * @return false & 400 BAD_REQUEST    if _gamePwd is null or empty
+   */
+  if (_gamePwd == null || _gamePwd.isEmpty) {
+    _serverResponse.status(HttpStatus.BAD_REQUEST).send(
+        "Bad Request: Password is required");
+    return false;
+  }
+
+  /**
+   * validate Game url
+   *
+   * @returns false & 400 BAD_REQUEST    if _gameUrl is not valid
+   */
+  if (!_gameUrl.isEmpty && !isUrl(_gameUrl)) {
+    _serverResponse.status(HttpStatus.BAD_REQUEST).send(
+        "Bad Request: '" + _gameUrl + "' is not a valid absolute url");
+    return null;
+  }
+
+  /**
+   * check if the Game already exists
+   *
+   * @return false & 409 CONFLICT   if Game already exists
+   */
+  if (game_exists(_gameName, _runtimeMemory)) {
+    _serverResponse.status(HttpStatus.CONFLICT).send(
+        "Bad Reqeust: The name $_gameName is already taken");
+    return false;
+  }
+  return true;
 }
