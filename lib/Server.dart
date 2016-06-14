@@ -30,6 +30,7 @@ main() async {
   start(host: '0.0.0.0', port: 6060).then((Server _gamekeyServer) {
     _gamekeyServer.static('web');
 
+
     /**
      *
      *
@@ -37,6 +38,7 @@ main() async {
      *
      *
      */
+
 
     /**
      * handles the OPTIONS USERS request
@@ -81,9 +83,6 @@ main() async {
     });
 
 
-
-
-
     /**
      *
      *
@@ -91,6 +90,7 @@ main() async {
      *
      *
      */
+
 
     /**
      * handles the GET USERS request
@@ -1072,6 +1072,7 @@ main() async {
   });
 }
 
+
     /**
     *
     *
@@ -1079,6 +1080,7 @@ main() async {
     *
     *
     */
+
 
 /**
  * Default Data that is written into
@@ -1254,16 +1256,16 @@ bool _toAuthenticate(Map entity, String password) {
  * @return false & send 409 CONFLICT,     if the user already exists
  * @return true                           if all the params are valid
  */
-bool _validateUserParams(Response _serverResponse, String _userName,
-    String _userPwd, String _userMail){
+bool _validateUserParams(Response serverResponse, String userName,
+    String userPwd, String userMail){
 
   /**
    * validate User name
    *
    * @return false & 400 Bad Request  if _username is null or empty
    */
-  if (_userName == null || _userName.isEmpty) {
-    _serverResponse.status(HttpStatus.BAD_REQUEST).send(
+  if (userName == null || userName.isEmpty) {
+    serverResponse.status(HttpStatus.BAD_REQUEST).send(
         "Bad Request: Name is required");
     return false;
   }
@@ -1273,8 +1275,8 @@ bool _validateUserParams(Response _serverResponse, String _userName,
    *
    * @return false & 400 BAD_REQUEST    if _userPwd is null or empty
    */
-  if (_userPwd == null || _userPwd.isEmpty) {
-    _serverResponse.status(HttpStatus.BAD_REQUEST).send(
+  if (userPwd == null || userPwd.isEmpty) {
+    serverResponse.status(HttpStatus.BAD_REQUEST).send(
         "Bad Request: Password is required");
     return false;
   }
@@ -1284,10 +1286,10 @@ bool _validateUserParams(Response _serverResponse, String _userName,
    *
    *  @returns false & 400 BAD_REQUEST   if _usermail is not valid
    */
-  if(_userMail != null){
-    if (!isEmail(_userMail)) {
-      _serverResponse.status(HttpStatus.BAD_REQUEST).send(
-          "Bad Request: $_userMail is not a valid email.");
+  if(userMail != null){
+    if (!isEmail(userMail)) {
+      serverResponse.status(HttpStatus.BAD_REQUEST).send(
+          "Bad Request: $userMail is not a valid email.");
       return false;
     }
   }
@@ -1297,9 +1299,9 @@ bool _validateUserParams(Response _serverResponse, String _userName,
    *
    * @return false & 409 CONFLICT   if User already exists
    */
-  if (user_exists(_userName, _runtimeMemory)) {
-    _serverResponse.status(HttpStatus.CONFLICT).send(
-        "Bad Reqeust: The name $_userName is already taken");
+  if (user_exists(userName, _runtimeMemory)) {
+    serverResponse.status(HttpStatus.CONFLICT).send(
+        "Bad Reqeust: The name $userName is already taken");
     return false;
   }
   return true;
@@ -1313,16 +1315,16 @@ bool _validateUserParams(Response _serverResponse, String _userName,
  * @return false & send 409 CONFLICT,     if the Game already exists
  * @return true                           if all the params are valid
  */
-bool _validateGameParams(Response _serverResponse, String _gameName,
-    String _gamePwd, String _gameUrl){
+bool _validateGameParams(Response serverResponse, String gameName,
+    String gamePwd, String gameUrl){
 
   /**
    * validate Game name
    *
    * @return false & 409 CONFLICT   if _gameName is null or empty
    */
-  if (_gameName == null || _gameName.isEmpty) {
-    _serverResponse.status(HttpStatus.BAD_REQUEST).send(
+  if (gameName == null || gameName.isEmpty) {
+    serverResponse.status(HttpStatus.BAD_REQUEST).send(
         "Bad Request: Name is required");
     return false;
   }
@@ -1332,8 +1334,8 @@ bool _validateGameParams(Response _serverResponse, String _gameName,
    *
    * @return false & 400 BAD_REQUEST    if _gamePwd is null or empty
    */
-  if (_gamePwd == null || _gamePwd.isEmpty) {
-    _serverResponse.status(HttpStatus.BAD_REQUEST).send(
+  if (gamePwd == null || gamePwd.isEmpty) {
+    serverResponse.status(HttpStatus.BAD_REQUEST).send(
         "Bad Request: Password is required");
     return false;
   }
@@ -1343,9 +1345,9 @@ bool _validateGameParams(Response _serverResponse, String _gameName,
    *
    * @returns false & 400 BAD_REQUEST    if _gameUrl is not valid
    */
-  if (!_gameUrl.isEmpty && !isUrl(_gameUrl)) {
-    _serverResponse.status(HttpStatus.BAD_REQUEST).send(
-        "Bad Request: '" + _gameUrl + "' is not a valid absolute url");
+  if (!gameUrl.isEmpty && !isUrl(gameUrl)) {
+    serverResponse.status(HttpStatus.BAD_REQUEST).send(
+        "Bad Request: '" + gameUrl + "' is not a valid absolute url");
     return null;
   }
 
@@ -1354,9 +1356,9 @@ bool _validateGameParams(Response _serverResponse, String _gameName,
    *
    * @return false & 409 CONFLICT   if Game already exists
    */
-  if (game_exists(_gameName, _runtimeMemory)) {
-    _serverResponse.status(HttpStatus.CONFLICT).send(
-        "Bad Reqeust: The name $_gameName is already taken");
+  if (game_exists(gameName, _runtimeMemory)) {
+    serverResponse.status(HttpStatus.CONFLICT).send(
+        "Bad Reqeust: The name $gameName is already taken");
     return false;
   }
   return true;
