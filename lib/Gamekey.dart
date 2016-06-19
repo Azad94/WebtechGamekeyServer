@@ -40,6 +40,7 @@ main() async {
      */
 
 
+
     /**
      * handles the OPTIONS USERS request
      *
@@ -48,11 +49,11 @@ main() async {
      *
      * @return  response includes Methods allowed for Users
      */
-    _gamekeyServer.options('/users').listen((request) {
+    _gamekeyServer.options('/user').listen((request) {
       _serverResponse = request.response;
       enableCors(_serverResponse);
-      _serverResponse.send("POST, GET, GET/:Id, PUT/:Id, DELETE/:Id");
-    });
+      _serverResponse.send("POST, GET, PUT, DELETE, OPTIONS");
+  });
 
     /**
      * handles the OPTIONS GAMES Request
@@ -62,10 +63,10 @@ main() async {
      *
      * @return  response includes Methods allowed for Games
      */
-    _gamekeyServer.options('/games').listen((request) {
+    _gamekeyServer.options('/game').listen((request) {
       _serverResponse = request.response;
       enableCors(_serverResponse);
-      _serverResponse.send("POST, GET, GET/:Id, PUT/:Id, DELETE/:Id");
+      _serverResponse.send("POST, GET, PUT, DELETE, OPTIONS");
     });
 
     /**
@@ -76,10 +77,10 @@ main() async {
      *
      * @return  response includes Methodes allowed for Gamestates
      */
-    _gamekeyServer.options('/gamestates').listen((request) {
+    _gamekeyServer.options('/gamestate').listen((request) {
       _serverResponse = request.response;
       enableCors(_serverResponse);
-      _serverResponse.send("POST/:Gameid/:Userid, GET/:Gameid, GET/:Gameid/:Userid");
+      _serverResponse.send("POST, GET, OPTIONS");
     });
 
 
@@ -130,8 +131,12 @@ main() async {
       _serverResponse = _clientRequest.response;
       enableCors(_serverResponse);
 
-      try{
+      /**
+       * the User which beeing created
+       */
+      Map user;
 
+      try{
         /**
          * retrieves the parameters from the
          * Client request
@@ -152,7 +157,7 @@ main() async {
           if (_userMail.isEmpty) _userMail = map["mail"];
         }
 
-        if (!_validateUserParams(_serverResponse ,_userName,
+        if (!validateUserParams(_serverResponse ,_userName,
             _userPwd, _userMail))
           return null;
 
@@ -160,13 +165,13 @@ main() async {
          * creates the User after validation which is
          * supposed to be added
          */
-        var user = {
+        user = {
           'type' : "user",
           'name' : _userName,
           'id' : _userID.toString(),
           'created' : (new DateTime.now().toIso8601String()),
           'mail' : _userMail,
-          'signature' : _generateSignature(_userID.toString(), _userPwd)
+          'signature' : generateSignature(_userID.toString(), _userPwd)
         };
 
         /**
@@ -247,10 +252,10 @@ main() async {
       }
 
       if (_userByname == 'true')
-        _searchedUser = get_user_by_name(id, _runtimeMemory);
+        _searchedUser = getUserByName(id, _runtimeMemory);
 
       if (_userByname == 'false' || _userByname.isEmpty)
-        _searchedUser = get_user_by_id(id, _runtimeMemory);
+        _searchedUser = getUserById(id, _runtimeMemory);
 
       if (_searchedUser == null){
         _serverResponse.status(HttpStatus.NOT_FOUND).send(
@@ -258,8 +263,7 @@ main() async {
         return null;
       }
 
-      if (!_toAuthenticate(_searchedUser, pwd)) {
-        //print("unauthorized");
+      if (!toAuthenticate(_searchedUser, pwd)) {
         _serverResponse.status(HttpStatus.UNAUTHORIZED).send(
             "unauthorized, please provide correct credentials");
         return null;
@@ -310,6 +314,11 @@ main() async {
       enableCors(_serverResponse);
 
       /**
+       * the User that is being updated
+       */
+      Map _user;
+
+      /**
        * retrieves the parameters from the
        * Client request
        */
@@ -346,15 +355,15 @@ main() async {
       }
 
       //checks if the User already exists
-      if (user_exists(_newUserName, _runtimeMemory)) {
+      if (doesUserExist(_newUserName, _runtimeMemory)) {
         _serverResponse.status(HttpStatus.CONFLICT).send(
             "User with name $_newUserName exists already.");
         return null;
       }
       //Reads user which has to be edited
-      var user = get_user_by_id(_currentId, _runtimeMemory);
+      _user = getUserById(_currentId, _runtimeMemory);
 
-      if (!_toAuthenticate(user, _currentPwd)) {
+      if (!toAuthenticate(_user, _currentPwd)) {
         _serverResponse.status(HttpStatus.UNAUTHORIZED).send(
             "unauthorized, please provide correct credentials");
         return null;
@@ -363,11 +372,11 @@ main() async {
       /**
        * sets the new credentials and information of a User
        */
-      if (!_newUserName.isEmpty) user['name'] = _newUserName;
-      if (!_newUserMail.isEmpty) user['mail'] = _newUserMail;
-      if (_newUserPwd != null || !_newUserPwd.isEmpty) user['signature'] =
-          _generateSignature(_currentId.toString(), _newUserPwd);
-      user['update'] = new DateTime.now().toUtc().toIso8601String();
+      if (!_newUserName.isEmpty) _user['name'] = _newUserName;
+      if (!_newUserMail.isEmpty) _user['mail'] = _newUserMail;
+      if (_newUserPwd != null || !_newUserPwd.isEmpty) _user['signature'] =
+          generateSignature(_currentId.toString(), _newUserPwd);
+      _user['update'] = new DateTime.now().toUtc().toIso8601String();
 
       /**
        * updates the server File
@@ -377,7 +386,7 @@ main() async {
       /**
        * respond for the Client contains the updated User
        */
-      _serverResponse.status(HttpStatus.OK).json(user);
+      _serverResponse.status(HttpStatus.OK).json(_user);
     });
 
     /**
@@ -400,6 +409,11 @@ main() async {
       enableCors(_serverResponse);
 
       /**
+       * the user which beeing deleted
+       */
+      Map _user;
+
+      /**
        * retrieves the parameters from the
        * Client request
        */
@@ -416,32 +430,32 @@ main() async {
       }
 
       //Gets the User which is supposed to be deleted
-      var user = get_user_by_id(_userId, _runtimeMemory);
+      _user = getUserById(_userId, _runtimeMemory);
 
       //even if User is null send OK Status
-      if (user == null) {
+      if (_user == null) {
         _serverResponse.status(HttpStatus.OK).send(
             "User not found.");
         return null;
       }
 
-      if (!_toAuthenticate(user, _userPwd)) {
+      if (!toAuthenticate(_user, _userPwd)) {
         _serverResponse.status(HttpStatus.UNAUTHORIZED).send(
             "unauthorized, please provide correct credentials");
         return null;
       }
 
       //Deletes the User from the server memory
-      if (_runtimeMemory['users'].remove(user) == null) {
+      if (_runtimeMemory['users'].remove(_user) == null) {
         _serverResponse.status(HttpStatus.INTERNAL_SERVER_ERROR)
-            .send('Failed\n$user');
+            .send('Failed\n$_user');
       }
 
       //Deletes the Game states belonging to that specific User
       List<Map> _deleteGamestates = new List<Map>();
       _runtimeMemory['gamestates']
           .where((_gamestate) => _gamestate["userid"].toString()
-              == _userId.toString())
+          == _userId.toString())
           .forEach((_gamestate) => _deleteGamestates.add(_gamestate));
       _deleteGamestates.forEach((_gamestate) =>
           _runtimeMemory["gamestates"].remove(_gamestate));
@@ -493,7 +507,7 @@ main() async {
      * @param _gameName,        Name of the Game
      * @param _gameSecret,      Secret of the Game, which is used for the
      *                          authentication.
-     * @game _gameUrl,           Url of the Game
+     * @game _gameUrl,          Url of the Game
      *
      * @return 200 OK,          if the Game was created successfully
      * @return 400 BAD_REQUEST, if any of the param is null, empty
@@ -506,6 +520,11 @@ main() async {
       enableCors(_serverResponse);
 
       /**
+       * Game which beeing created
+       */
+      Map _game;
+
+      /**
        * retrieves the parameters from the
        * Client request
        */
@@ -515,8 +534,7 @@ main() async {
 
       /**
        * retrieves the parameters from the
-       * payload of the Client request
-       */
+       * payload of the Client request*/
       if (request.input.headers.contentLength != -1) {
         var map = await request.payload();
         if (_gameName.isEmpty) _gameName = map["name"] == null ? ""
@@ -525,7 +543,7 @@ main() async {
         if (_gameSecret.isEmpty) _gameSecret = map["secret"] == null ? ""
             : map["secret"];
 
-        if (_gameUrl.isEmpty) _gameUrl = map["url"] == null ? "" : map["url"];
+        if (_gameUrl.isEmpty) _gameUrl = "";
       }
 
       var id = new Random.secure().nextInt(0xFFFFFFFF);
@@ -536,13 +554,13 @@ main() async {
         if (uri.isAbsolute) {
           _serverResponse.status(HttpStatus.BAD_REQUEST)
               .send("Bad Request: '" + _gameUrl + "' is not a "
-                "valid absolute url");
+              "valid absolute url");
           return null;
         }
       }
 
-      if(!_validateGameParams(_serverResponse, _gameName,
-            _gameSecret, _gameUrl)){
+      if(!validateGameParams(_serverResponse, _gameName,
+          _gameSecret, _gameUrl)){
         return null;
       }
 
@@ -550,7 +568,7 @@ main() async {
        * creates the Game, after validation, which is
        * supposed to be added
        */
-      Map game = {
+      _game = {
         "type" : 'game',
         "name" : _gameName,
         "id" : id.toString(),
@@ -563,7 +581,7 @@ main() async {
       /**
        * adds the Game to the runtime Memory
        */
-      _runtimeMemory['games'].add(game);
+      _runtimeMemory['games'].add(_game);
 
       /**
        * updates the server File
@@ -573,7 +591,7 @@ main() async {
       /**
        * respond for the Client contains the created Game
        */
-      _serverResponse.status(HttpStatus.OK).json(game);
+      _serverResponse.status(HttpStatus.OK).json(_game);
     });
 
     /**
@@ -595,6 +613,11 @@ main() async {
       enableCors(_serverResponse);
 
       /**
+       * game which is beeing searched
+       */
+      Map _game;
+
+      /**
        * retrieves the parameters from the
        * Client request
        */
@@ -611,26 +634,26 @@ main() async {
             : map["secret"];
       }
 
-      var game = get_game_by_id(_gameId, _runtimeMemory);
+      _game = getGameById(_gameId, _runtimeMemory);
 
-      if (game == null) {
+      if (_game == null) {
         _serverResponse.status(HttpStatus.NOT_FOUND).send("Game not found");
         return null;
       }
 
-      if (!_toAuthenticate(game, _gameSecret)) {
+      if (!toAuthenticate(_game, _gameSecret)) {
         _serverResponse.status(HttpStatus.UNAUTHORIZED).send(
             "unauthorized, please provide correct credentials");
         return null;
       }
 
       //Duplicates a game and adds the List of Users to it
-      game = new Map.from(game);
-      game['users'] = new List();
+      _game = new Map.from(_game);
+      _game['users'] = new List();
       if (_runtimeMemory['gamestates'] != null) {
         for (Map m in _runtimeMemory['gamestates']) {
           if (m['gameid'].toString() == _gameId.toString()) {
-            game['users'].add(m['userid']);
+            _game['users'].add(m['userid']);
           }
         }
       }
@@ -638,7 +661,7 @@ main() async {
       /**
        * respond for the Client contains the searched Game
        */
-      _serverResponse.status(HttpStatus.OK).json(game);
+      _serverResponse.status(HttpStatus.OK).json(_game);
     });
 
     /**
@@ -665,6 +688,11 @@ main() async {
 
       _serverResponse = request.response;
       enableCors(_serverResponse);
+
+      /**
+       * Game which is beeing updated
+       */
+      Map _game;
 
       /**
        * retrieves the parameters from the
@@ -695,7 +723,7 @@ main() async {
           _newGameSecret = map["newsecret"] == null ? "" : map["newsecret"];
       }
 
-      var game = get_game_by_id(_currentGameId, _runtimeMemory);
+      _game = getGameById(_currentGameId, _runtimeMemory);
 
       //Check if the given URL is valid
       if (!_newGameUrl.isEmpty && (!isUrl(_newGameUrl))) {
@@ -705,14 +733,14 @@ main() async {
       }
       //Control if the Game already exists
       if (!_newGameName.isEmpty) {
-        if (game_exists(_newGameName, _runtimeMemory)) {
+        if (gameExists(_newGameName, _runtimeMemory)) {
           _serverResponse.status(HttpStatus.CONFLICT).send(
               "Game Already exists");
           return null;
         }
       }
 
-      if (!_toAuthenticate(game, _currentSecret)) {
+      if (!toAuthenticate(_game, _currentSecret)) {
         _serverResponse.status(HttpStatus.UNAUTHORIZED).send(
             "unauthorized, please provide correct credentials");
         return null;
@@ -721,11 +749,11 @@ main() async {
       /**
        * sets the new credentials and information of a Game
        */
-      if (!_newGameName.isEmpty) game['name'] = _newGameName;
-      if (!_newGameUrl.isEmpty) game['url'] = _newGameUrl;
-      if (!_newGameSecret.isEmpty) game['signature'] =
-          _generateSignature(_currentGameId.toString(), _newGameSecret);
-      game['update'] = new DateTime.now().toString();
+      if (!_newGameName.isEmpty) _game['name'] = _newGameName;
+      if (!_newGameUrl.isEmpty) _game['url'] = _newGameUrl;
+      if (!_newGameSecret.isEmpty) _game['signature'] =
+          generateSignature(_currentGameId.toString(), _newGameSecret);
+      _game['update'] = new DateTime.now().toString();
 
       /**
        * updates the server File
@@ -735,7 +763,7 @@ main() async {
       /**
        * respond for the Client contains the updated Game
        */
-      _serverResponse.status(HttpStatus.OK).json(game);
+      _serverResponse.status(HttpStatus.OK).json(_game);
     });
 
     /**
@@ -758,6 +786,11 @@ main() async {
       enableCors(_serverResponse);
 
       /**
+       * Game which is going to be delted
+       */
+      Map _game;
+
+      /**
        * retrieves the parameters from the
        * Client request
        */
@@ -774,21 +807,21 @@ main() async {
             : map["secret"];
       }
 
-      var game = get_game_by_id(_gameId, _runtimeMemory);
+      _game = getGameById(_gameId, _runtimeMemory);
 
-      if (game == null) {
+      if (_game == null) {
         _serverResponse.status(HttpStatus.OK).send("Game not found");
         return null;
       }
 
-      if (!_toAuthenticate(game, _gameSecret)) {
+      if (!toAuthenticate(_game, _gameSecret)) {
         _serverResponse.status(HttpStatus.UNAUTHORIZED).send(
             "unauthorized, please provide correct credentials");
         return null;
       }
 
       //Deletes the Game from the server memory
-      if (_runtimeMemory['games'].remove(game) == null) {
+      if (_runtimeMemory['games'].remove(_game) == null) {
         _serverResponse.status(HttpStatus.OK)
             .send('Game $_gameId deleted successfully.');
       }
@@ -797,7 +830,7 @@ main() async {
       List<Map> _deleteGameStates = new List<Map>();
       _runtimeMemory['gamestates']
           .where((_gamestate) => _gamestate["gameid"].toString()
-              == _gameId.toString())
+          == _gameId.toString())
           .forEach((_gamestate) => _deleteGameStates.add(_gamestate));
       _deleteGameStates.forEach((_gamestate) =>
           _runtimeMemory["gamestates"].remove(_gamestate));
@@ -845,6 +878,10 @@ main() async {
       enableCors(_serverResponse);
 
       /**
+       * Gamestates which are beeing searched
+       */
+      List _gamestates = new List<Map>();
+      /**
        * retrieves the parameters from the
        * Client request
        */
@@ -862,8 +899,8 @@ main() async {
             : map["secret"];
       }
 
-      var _game = get_game_by_id(_gameId, _runtimeMemory);
-      var _user = get_user_by_id(_userId, _runtimeMemory);
+      var _game = getGameById(_gameId, _runtimeMemory);
+      var _user = getUserById(_userId, _runtimeMemory);
 
 
       if (_user == null || _game == null) {
@@ -872,13 +909,12 @@ main() async {
         return null;
       }
 
-      if (!_toAuthenticate(_game, _gameSecret)) {
+      if (!toAuthenticate(_game, _gameSecret)) {
         _serverResponse.status(HttpStatus.UNAUTHORIZED).send(
             "unauthorized, please provide correct credentials");
         return null;
       }
 
-      var _gamestates = new List<Map>();
       for (Map _map in _runtimeMemory['gamestates']) {
         if (_map['gameid'].toString() == _gameId.toString() &&
             _map['userid'].toString() == _userId.toString()) {
@@ -921,6 +957,10 @@ main() async {
       enableCors(_serverResponse);
 
       /**
+       * Gamestates which are beeign searched
+       */
+      List _listGamestates = new List();
+      /**
        * retrieves the parameters from the
        * Client request
        */
@@ -936,7 +976,7 @@ main() async {
         if (secret.isEmpty) secret = map["secret"] == null ? "" : map["secret"];
       }
 
-      var game = get_game_by_id(gameid, _runtimeMemory);
+      var game = getGameById(gameid, _runtimeMemory);
 
       if (game == null) {
         _serverResponse.status(HttpStatus.NOT_FOUND).send(
@@ -944,20 +984,18 @@ main() async {
         return null;
       }
 
-      if (!_toAuthenticate(game, secret)) {
+      if (!toAuthenticate(game, secret)) {
         _serverResponse.status(HttpStatus.UNAUTHORIZED).send(
             "unauthorized, please provide correct credentials");
         return null;
       }
 
-      //List all gamestates of a Game
-      var _listGamestates = new List();
       for (Map _map in _runtimeMemory['gamestates']) {
         if (_map['gameid'].toString() == gameid.toString()) {
           var _gamestate = new Map.from(_map);
           _gamestate["gamename"] = game["name"];
           _gamestate["username"]
-            = get_user_by_id(_map["userid"],_runtimeMemory);
+          = getUserById(_map["userid"],_runtimeMemory);
           _listGamestates.add(_gamestate);
         }
       }
@@ -991,6 +1029,10 @@ main() async {
       enableCors(_serverResponse);
 
       /**
+       * Gamestate which is beeing created
+       */
+      Map _newGamestate;
+      /**
        * retrieves the parameters from the
        * Client request
        */
@@ -1012,8 +1054,8 @@ main() async {
             : map["state"];
       }
 
-      var game = get_game_by_id(_gameId, _runtimeMemory);
-      var user = get_user_by_id(_userId, _runtimeMemory);
+      var game = getGameById(_gameId, _runtimeMemory);
+      var user = getUserById(_userId, _runtimeMemory);
 
       if (user == null || game == null) {
         _serverResponse.status(HttpStatus.NOT_FOUND).send(
@@ -1021,7 +1063,7 @@ main() async {
         return null;
       }
 
-      if (!_toAuthenticate(game, _gameSecret)) {
+      if (!toAuthenticate(game, _gameSecret)) {
         _serverResponse.status(HttpStatus.UNAUTHORIZED).send(
             "unauthorized, please provide correct credentials");
         return null;
@@ -1039,7 +1081,7 @@ main() async {
         }
 
         //Creates new Gamestate
-        var _newGamestate = {
+        _newGamestate = {
           "type" : 'gamestate',
           "gameid" : _gameId,
           "userid" : _userId,
@@ -1066,20 +1108,20 @@ main() async {
         print(e);
         _serverResponse.status(HttpStatus.BAD_REQUEST)
             .send('Bad request: state must be provided as valid JSON, '
-              'was $_gamestate');
+            'was $_gamestate');
       }
     });
   });
 }
 
 
-    /**
-    *
-    *
-    *                Helper Methods, for the Restful Api Implementation.
-    *
-    *
-    */
+/**
+ *
+ *
+ *                Helper Methods, for the Restful Api Implementation.
+ *
+ *
+ */
 
 
 /**
@@ -1118,7 +1160,7 @@ Response _serverResponse;
  *
  * @return null, if User doesn't exist
  */
-Map get_user_by_name(String name, Map memory) {
+Map getUserByName(String name, Map memory) {
 
   for (Map _map in memory['users']) {
     if (_map['name'] == name) return _map;
@@ -1131,7 +1173,7 @@ Map get_user_by_name(String name, Map memory) {
  *
  * @return null, if User doesn't exist
  */
-Map get_user_by_id(String id, Map memory) {
+Map getUserById(String id, Map memory) {
 
   for (Map _map in memory['users']) {
     if (_map['id'].toString() == id.toString())
@@ -1145,9 +1187,34 @@ Map get_user_by_id(String id, Map memory) {
  *
  * @return false, if User doesn't exist
  */
-bool user_exists(String name, Map memory) {
+bool doesUserExist(String name, Map memory) {
 
   for (Map _map in memory['users']) {
+    if (_map['name'] == name) return true;
+  }
+  return false;
+}
+
+/**
+ * Get Game by Id from Memory
+ *
+ * @return null, if Game doesn't exist
+ */
+Map getGameById(String id, Map memory) {
+  for (Map _map in memory['games']) {
+    if (_map['id'].toString() == id.toString())
+      return _map;
+  }
+  return null;
+}
+
+/**
+ * Check if Game exists in the Memory
+ *
+ * @return false, if Game doesn't exist
+ */
+bool gameExists(String name, Map memory) {
+  for (Map _map in memory['games']) {
     if (_map['name'] == name) return true;
   }
   return false;
@@ -1171,32 +1238,6 @@ bool isEmail(String mail) {
   return _regexExpr.hasMatch(mail);
 }
 
-
-/**
- * Get Game by Id from Memory
- *
- * @return null, if Game doesn't exist
- */
-Map get_game_by_id(String id, Map memory) {
-  for (Map _map in memory['games']) {
-    if (_map['id'].toString() == id.toString())
-      return _map;
-  }
-  return null;
-}
-
-/**
- * Check if Game exists in the Memory
- *
- * @return false, if Game doesn't exist
- */
-bool game_exists(String name, Map memory) {
-  for (Map _map in memory['games']) {
-    if (_map['name'] == name) return true;
-  }
-  return false;
-}
-
 /**
  * Validate if the Url is correct
  *
@@ -1212,14 +1253,14 @@ bool isUrl(String url) {
 /**
  * Sets CORS headers for responses.
  */
-void enableCors(Response response) {
-  response.header('Access-Control-Allow-Origin',
+void enableCors(Response serverResponse) {
+  serverResponse.header('Access-Control-Allow-Origin',
       '*'
   );
-  response.header('Access-Control-Allow-Methods',
+  serverResponse.header('Access-Control-Allow-Methods',
       'POST, GET, DELETE, PUT, OPTIONS'
   );
-  response.header('Access-Control-Allow-Headers',
+  serverResponse.header('Access-Control-Allow-Headers',
       'Origin, X-Requested-With, Content-Type, Accept, Charset,'
           'charset, pwd, secret, name, mail, newpwd'
   );
@@ -1231,9 +1272,9 @@ void enableCors(Response response) {
  *
  * @return signature
  */
-String _generateSignature(String id, String password) {
+String generateSignature(String id, String passwordOrSecret) {
   return BASE64
-      .encode(sha256.convert(UTF8.encode(id + "," + password)).bytes);
+      .encode(sha256.convert(UTF8.encode(id + "," + passwordOrSecret)).bytes);
 }
 
 /**
@@ -1242,9 +1283,9 @@ String _generateSignature(String id, String password) {
  *
  * @return true, if generated credentials match the signature
  */
-bool _toAuthenticate(Map entity, String password) {
+bool toAuthenticate(Map entity, String password) {
   if(entity['signature'] ==
-      _generateSignature(entity['id'].toString(), password))
+      generateSignature(entity['id'].toString(), password))
     return true;
   return false;
 }
@@ -1256,7 +1297,7 @@ bool _toAuthenticate(Map entity, String password) {
  * @return false & send 409 CONFLICT,     if the user already exists
  * @return true                           if all the params are valid
  */
-bool _validateUserParams(Response serverResponse, String userName,
+bool validateUserParams(Response serverResponse, String userName,
     String userPwd, String userMail){
 
   /**
@@ -1299,7 +1340,7 @@ bool _validateUserParams(Response serverResponse, String userName,
    *
    * @return false & 409 CONFLICT   if User already exists
    */
-  if (user_exists(userName, _runtimeMemory)) {
+  if (doesUserExist(userName, _runtimeMemory)) {
     serverResponse.status(HttpStatus.CONFLICT).send(
         "Bad Reqeust: The name $userName is already taken");
     return false;
@@ -1315,8 +1356,8 @@ bool _validateUserParams(Response serverResponse, String userName,
  * @return false & send 409 CONFLICT,     if the Game already exists
  * @return true                           if all the params are valid
  */
-bool _validateGameParams(Response serverResponse, String gameName,
-    String gamePwd, String gameUrl){
+bool validateGameParams(Response serverResponse, String gameName,
+    String gameSecret, String gameUrl){
 
   /**
    * validate Game name
@@ -1334,7 +1375,7 @@ bool _validateGameParams(Response serverResponse, String gameName,
    *
    * @return false & 400 BAD_REQUEST    if _gamePwd is null or empty
    */
-  if (gamePwd == null || gamePwd.isEmpty) {
+  if (gameSecret == null || gameSecret.isEmpty) {
     serverResponse.status(HttpStatus.BAD_REQUEST).send(
         "Bad Request: Password is required");
     return false;
@@ -1348,7 +1389,7 @@ bool _validateGameParams(Response serverResponse, String gameName,
   if (!gameUrl.isEmpty && !isUrl(gameUrl)) {
     serverResponse.status(HttpStatus.BAD_REQUEST).send(
         "Bad Request: '" + gameUrl + "' is not a valid absolute url");
-    return null;
+    return false;
   }
 
   /**
@@ -1356,7 +1397,7 @@ bool _validateGameParams(Response serverResponse, String gameName,
    *
    * @return false & 409 CONFLICT   if Game already exists
    */
-  if (game_exists(gameName, _runtimeMemory)) {
+  if (gameExists(gameName, _runtimeMemory)) {
     serverResponse.status(HttpStatus.CONFLICT).send(
         "Bad Reqeust: The name $gameName is already taken");
     return false;
